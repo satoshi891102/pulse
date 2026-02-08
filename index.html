@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pulse — Crypto Sentiment Dashboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0a;--card:#111;--border:#222;--text:#e0e0e0;--dim:#666;--accent:#00d4ff}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh;overflow-x:hidden}
+.glow-overlay{position:fixed;top:0;left:0;right:0;bottom:0;pointer-events:none;transition:background 2s ease;z-index:0}
+.container{max-width:900px;margin:0 auto;padding:24px 16px;position:relative;z-index:1}
+header{text-align:center;margin-bottom:32px}
+header h1{font-size:2rem;font-weight:700;letter-spacing:2px}
+header h1 span{color:var(--accent)}
+.subtitle{color:var(--dim);font-size:.85rem;margin-top:4px}
+.refresh-info{color:var(--dim);font-size:.75rem;margin-top:8px}
+
+/* Gauge */
+.gauge-section{text-align:center;margin-bottom:36px}
+.gauge-wrap{position:relative;width:280px;height:155px;margin:0 auto}
+.gauge-bg,.gauge-fill{position:absolute;bottom:0;left:0;width:280px;height:140px}
+svg.gauge-svg{width:280px;height:155px}
+.gauge-value{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-size:3rem;font-weight:800;transition:color .5s}
+.gauge-label{font-size:1.1rem;font-weight:600;margin-top:8px;transition:color .5s}
+.mood-text{color:var(--dim);font-size:.9rem;margin-top:4px;font-style:italic}
+
+/* Sparkline */
+.sparkline-section{text-align:center;margin-bottom:32px}
+.sparkline-section h3{font-size:.85rem;color:var(--dim);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px}
+svg.sparkline{width:220px;height:50px}
+
+/* Prices */
+.prices{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:32px}
+.price-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;transition:border-color .5s}
+.price-card:hover{border-color:#333}
+.price-symbol{font-size:.8rem;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+.price-value{font-size:1.5rem;font-weight:700;transition:color .3s}
+.price-change{font-size:.85rem;margin-top:4px;font-weight:600}
+.price-change.up{color:#00e676}
+.price-change.down{color:#ff1744}
+
+/* Trending */
+.trending-section h3{font-size:.85rem;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+.trending-list{display:grid;gap:8px}
+.trending-item{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;transition:border-color .3s}
+.trending-item:hover{border-color:#333}
+.trending-left{display:flex;align-items:center;gap:10px}
+.trending-img{width:28px;height:28px;border-radius:50%;background:#222}
+.trending-name{font-weight:600;font-size:.9rem}
+.trending-pair{color:var(--dim);font-size:.75rem}
+.trending-right{text-align:right}
+.trending-price{font-weight:600;font-size:.9rem}
+.trending-vol{color:var(--dim);font-size:.75rem}
+
+footer{text-align:center;color:var(--dim);font-size:.7rem;margin-top:40px;padding-bottom:20px}
+
+@media(max-width:600px){
+  .prices{grid-template-columns:1fr}
+  .gauge-wrap{width:220px;height:125px}
+  svg.gauge-svg{width:220px;height:125px}
+  .gauge-value{font-size:2.2rem}
+  header h1{font-size:1.5rem}
+}
+
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.fade-in{animation:fadeIn .4s ease}
+.loading{color:var(--dim);text-align:center;padding:20px}
+</style>
+</head>
+<body>
+<div class="glow-overlay" id="glow"></div>
+<div class="container">
+  <header>
+    <h1><span>◉</span> PULSE</h1>
+    <div class="subtitle">Real-Time Crypto Sentiment</div>
+    <div class="refresh-info" id="refresh-info">Loading...</div>
+  </header>
+
+  <section class="gauge-section">
+    <div class="gauge-wrap">
+      <svg class="gauge-svg" viewBox="0 0 280 155">
+        <path d="M20,140 A120,120 0 0,1 260,140" fill="none" stroke="#1a1a1a" stroke-width="18" stroke-linecap="round"/>
+        <path id="gauge-arc" d="M20,140 A120,120 0 0,1 260,140" fill="none" stroke="#333" stroke-width="18" stroke-linecap="round" stroke-dasharray="0 377" style="transition:stroke-dasharray 1.5s ease,stroke 1s ease"/>
+      </svg>
+      <div class="gauge-value" id="gauge-value">--</div>
+    </div>
+    <div class="gauge-label" id="gauge-label">Loading...</div>
+    <div class="mood-text" id="mood-text"></div>
+  </section>
+
+  <section class="sparkline-section">
+    <h3>7-Day Fear &amp; Greed</h3>
+    <svg class="sparkline" id="sparkline" viewBox="0 0 220 50"></svg>
+  </section>
+
+  <section class="prices" id="prices">
+    <div class="price-card"><div class="price-symbol">BTC</div><div class="price-value">--</div><div class="price-change">--</div></div>
+    <div class="price-card"><div class="price-symbol">ETH</div><div class="price-value">--</div><div class="price-change">--</div></div>
+    <div class="price-card"><div class="price-symbol">SOL</div><div class="price-value">--</div><div class="price-change">--</div></div>
+  </section>
+
+  <section class="trending-section">
+    <h3>Trending on Solana</h3>
+    <div class="trending-list" id="trending"><div class="loading">Loading trending pairs...</div></div>
+  </section>
+
+  <footer>PULSE — Data from CoinGecko, Alternative.me, DexScreener — Not financial advice</footer>
+</div>
+
+<script>
+const COINGECKO='https://api.coingecko.com/api/v3/simple/price?ids=solana,bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true';
+const FNG='https://api.alternative.me/fng/';
+const FNG7='https://api.alternative.me/fng/?limit=7';
+const DEXSCREENER='https://api.dexscreener.com/latest/dex/tokens/So11111111111111111111111111111111111111112';
+
+function fngColor(v){
+  if(v<=25)return'#ff1744';
+  if(v<=45)return'#ff9100';
+  if(v<=55)return'#ffd600';
+  if(v<=75)return'#76ff03';
+  return'#00e676';
+}
+
+function moodText(v,label){
+  if(v<=20)return'Maximum pain. Smart money accumulates here.';
+  if(v<=35)return'Fear in the market. Historically a good entry zone.';
+  if(v<=45)return'Slight unease. Watch for opportunities.';
+  if(v<=55)return'Market is indecisive. Could go either way.';
+  if(v<=70)return'Optimism rising. Stay disciplined.';
+  if(v<=85)return'Getting greedy. Consider taking profits.';
+  return'Peak euphoria. This is where tops form.';
+}
+
+function setGauge(value){
+  const max=377;
+  const fill=value/100*max;
+  const arc=document.getElementById('gauge-arc');
+  const col=fngColor(value);
+  arc.setAttribute('stroke-dasharray',fill+' '+max);
+  arc.setAttribute('stroke',col);
+  document.getElementById('gauge-value').textContent=value;
+  document.getElementById('gauge-value').style.color=col;
+}
+
+function setGlow(value){
+  const col=fngColor(value);
+  document.getElementById('glow').style.background='radial-gradient(ellipse at 50% 20%,'+col+'08 0%,transparent 70%)';
+}
+
+function fmt(n){
+  if(n>=1e6)return'$'+(n/1e6).toFixed(2)+'M';
+  if(n>=1e3)return'$'+(n/1e3).toFixed(1)+'K';
+  if(n>=1)return'$'+n.toFixed(2);
+  if(n>=0.001)return'$'+n.toFixed(4);
+  return'$'+n.toFixed(6);
+}
+
+function fmtBig(n){
+  if(n>=1e9)return'$'+(n/1e9).toFixed(2)+'B';
+  if(n>=1e6)return'$'+(n/1e6).toFixed(1)+'M';
+  if(n>=1e3)return'$'+(n/1e3).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+  return'$'+n.toFixed(2);
+}
+
+async function fetchFNG(){
+  try{
+    const [r1,r2]=await Promise.all([fetch(FNG),fetch(FNG7)]);
+    const d1=await r1.json(), d2=await r2.json();
+    const val=parseInt(d1.data[0].value);
+    const label=d1.data[0].value_classification;
+    setGauge(val);
+    setGlow(val);
+    document.getElementById('gauge-label').textContent=label;
+    document.getElementById('gauge-label').style.color=fngColor(val);
+    document.getElementById('mood-text').textContent=moodText(val,label);
+    // sparkline
+    const pts=d2.data.map(d=>parseInt(d.value)).reverse();
+    const svg=document.getElementById('sparkline');
+    const minV=Math.min(...pts)-5,maxV=Math.max(...pts)+5,range=maxV-minV||1;
+    const coords=pts.map((v,i)=>{
+      const x=i/(pts.length-1)*200+10;
+      const y=45-(v-minV)/range*40;
+      return x+','+y;
+    });
+    const col=fngColor(val);
+    svg.innerHTML='<polyline points="'+coords.join(' ')+'" fill="none" stroke="'+col+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'+
+      pts.map((v,i)=>{
+        const x=i/(pts.length-1)*200+10;
+        const y=45-(v-minV)/range*40;
+        return'<circle cx="'+x+'" cy="'+y+'" r="3" fill="'+col+'"/>';
+      }).join('');
+  }catch(e){console.error('FNG error',e)}
+}
+
+async function fetchPrices(){
+  try{
+    const r=await fetch(COINGECKO);
+    const d=await r.json();
+    const coins=[
+      {id:'bitcoin',sym:'BTC'},
+      {id:'ethereum',sym:'ETH'},
+      {id:'solana',sym:'SOL'}
+    ];
+    const el=document.getElementById('prices');
+    el.innerHTML=coins.map(c=>{
+      const p=d[c.id];
+      if(!p)return'<div class="price-card"><div class="price-symbol">'+c.sym+'</div><div class="price-value">--</div><div class="price-change">--</div></div>';
+      const price=p.usd;
+      const chg=p.usd_24h_change||0;
+      const up=chg>=0;
+      return'<div class="price-card fade-in"><div class="price-symbol">'+c.sym+'</div><div class="price-value">'+fmtBig(price)+'</div><div class="price-change '+(up?'up':'down')+'">'+(up?'▲':'▼')+' '+Math.abs(chg).toFixed(2)+'%</div></div>';
+    }).join('');
+  }catch(e){console.error('Price error',e)}
+}
+
+async function fetchTrending(){
+  try{
+    const r=await fetch(DEXSCREENER);
+    const d=await r.json();
+    if(!d.pairs)return;
+    const sorted=d.pairs.filter(p=>p.liquidity&&p.liquidity.usd>10000).sort((a,b)=>(b.volume?.h24||0)-(a.volume?.h24||0)).slice(0,5);
+    const el=document.getElementById('trending');
+    if(!sorted.length){el.innerHTML='<div class="loading">No pairs found</div>';return;}
+    el.innerHTML=sorted.map(p=>{
+      const img=p.info&&p.info.imageUrl?'<img class="trending-img" src="'+p.info.imageUrl+'" onerror="this.style.display=\'none\'"/>':'<div class="trending-img"></div>';
+      const name=p.baseToken.name.length>20?p.baseToken.name.slice(0,20)+'…':p.baseToken.name;
+      return'<div class="trending-item fade-in"><div class="trending-left">'+img+'<div><div class="trending-name">'+name+'</div><div class="trending-pair">'+p.baseToken.symbol+'/'+p.quoteToken.symbol+'</div></div></div><div class="trending-right"><div class="trending-price">'+fmt(parseFloat(p.priceUsd||0))+'</div><div class="trending-vol">Vol: '+fmtBig(p.volume?.h24||0)+'</div></div></div>';
+    }).join('');
+  }catch(e){console.error('Trending error',e)}
+}
+
+async function refresh(){
+  await Promise.all([fetchFNG(),fetchPrices(),fetchTrending()]);
+  document.getElementById('refresh-info').textContent='Updated '+new Date().toLocaleTimeString()+' · Refreshes every 60s';
+}
+
+refresh();
+setInterval(refresh,60000);
+</script>
+</body>
+</html>
